@@ -258,4 +258,127 @@ class UserApi extends Api
     $filter['created_by'] = $user_id;
     return Account::search($filter);
   }
+  
+   /**
+   * Import Users
+   *
+   * @url POST /users/csv
+      * 
+   */
+  public function import_csv($data = array(), $mime = 'text/csv')
+    {
+    global $path_root, $path_cache;
+    $newUsers=$errors=array();
+    $allowedTypes = array('csv' => 'text/csv', 'txt' => 'text/plain');
+    if (in_array($mime, $allowedTypes)) {
+      if (!empty($data)) {
+        $file_path = $path_cache . DIRECTORY_SEPARATOR . 'users.csv';
+        file_put_contents($file_path, $data);
+        if (file_exists($file_path)) { 
+            $csvFile = fopen($file_path, 'r');
+
+            // Skip the first line
+            fgetcsv($csvFile);
+            $line_no=0;
+            while(($line = fgetcsv($csvFile)) !== FALSE){
+              if($line[4]!=""){
+                $line_no++;
+                // Get row data
+
+              $data=array(
+                  'first_name'=>$line[1],
+                  'last_name'=>$line[2],
+                  'phone'=>$line[3],
+                  'email'=>$line[4],
+                  'address'=>$line[5],
+                  'company'=>(int)$line[6],
+                  'country_id'=>(int)$line[7],
+                  'language_id'=>(int)$line[8],
+                  'timezone_id'=>(int)$line[9]
+                );
+
+              $oUser = new User();
+              $this->set($oUser, $data);
+
+                if ($oUser->save()) {
+                  array_push($newUsers,$oUser->user_id);
+                } else {
+                  array_push($errors, $line_no);
+                }
+
+              }
+
+            }
+
+            fclose($csvFile);
+
+           if(empty($errors)){
+                return count($newUsers);
+              }
+            else{
+              throw new CoreException(415, "Rocord(s) at following line(s) not inserted:".json_encode($errors));
+            }
+        }
+        else{
+          throw new CoreException(404, "File not found");
+        }
+
+      } else {
+        throw new CoreException(411, "Empty file");
+      }
+    } else {
+      throw new CoreException(415, "Unsupported File Type");
+    }
+  }
+
+
+/**
+   * Export Csv
+   *
+   * @url GET /users/csv
+   * 
+ */
+public function export_list($query = array())
+  {
+
+    $this->_authorize('user_list');
+    $oUser = User::search((array)$query);
+    if ($oUser) {
+
+      $file_path = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'users.csv';
+
+      $handle = fopen($file_path, 'w');
+      if (!$handle) {
+        throw new CoreException(500, "Unable to open file");
+      }
+
+      foreach($oUser as $aValue) {
+        $contact_row = '"'.$aValue['user_id'].'","'.$aValue['first_name'].'","'.$aValue['last_name'].'","'.$aValue['phone'].'","'.$aValue['email'].'",'.
+                     '"'.$aValue['address'].'","'.$aValue['company'].'","'.$aValue['country_id'].'","'.$aValue['language_id'].'",'.
+                     '"'.$aValue['timezone_id'].'"'."\n";
+        fwrite($handle, $contact_row);
+      }
+
+      fclose($handle);
+
+      return new SplFileInfo($file_path);
+    } else {
+      throw new CoreException(404, "User not found");
+    }
+  }
+/**
+   * Provide User Sample
+   *
+   * @url GET /users/sample/csv
+ */
+  public function sample_csv()
+  {
+    global $path_data;
+    $sample_contact = $path_data . DIRECTORY_SEPARATOR . 'users_sample.csv';
+    if (file_exists($sample_contact)) {
+      return new SplFileInfo($sample_contact);
+    } else {
+      throw new CoreException(404, "File not found");
+    }
+  }
 }
